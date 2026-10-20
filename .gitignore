@@ -5,3 +5,7 @@ data/*.bak
 .vscode/
 data/.jwt_secret
 data/.write.lock
+
+# Tài liệu Word nội bộ, không đưa lên repo công khai
+*.docx
+*.doc
