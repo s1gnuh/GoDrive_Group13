@@ -1,7 +1,6 @@
 <?php
 require_once __DIR__ . "/_helpers.php";
 
-$adminsFile = "admins.json";
 $method = method();
 $action = action();
 
@@ -11,46 +10,26 @@ if ($method === "POST" && ($action === "" || $action === "login")) {
     $password = is_string($body["password"] ?? null) ? $body["password"] : "";
     if ($username === "" || $password === "") fail("Thiếu thông tin");
 
-    $admins = read_json($adminsFile);
-    $admin = null;
-    foreach ($admins as $a) {
-        if ($a["username"] === $username) { $admin = $a; break; }
-        if (!empty($a["email"]) && strtolower($a["email"]) === strtolower($username)) {
-            $admin = $a; break;
-        }
-    }
+    // Đăng nhập bằng username (phân biệt hoa thường, nhờ BINARY) hoặc email (không phân biệt)
+    $admin = db_one("SELECT * FROM admins WHERE BINARY username = ? LIMIT 1", [$username])
+          ?? db_one("SELECT * FROM admins WHERE email = ? LIMIT 1", [$username]);
     if (!$admin) fail("Tài khoản không tồn tại", 401);
 
-    $hash = $admin["passwordHash"] ?? "";
-    if (!password_verify($password, $hash)) fail("Sai mật khẩu", 401);
+    // So khớp mật khẩu với hash bcrypt lưu trong DB (không giải ngược hash)
+    if (!password_verify($password, $admin["password_hash"])) fail("Sai mật khẩu", 401);
 
-    $token = make_token(["id" => $admin["id"], "username" => $admin["username"]]);
+    $token = make_token(["id" => (int)$admin["id"], "username" => $admin["username"]]);
     respond([
         "token" => $token,
-        "admin" => [
-            "id" => $admin["id"],
-            "username" => $admin["username"],
-            "name" => $admin["name"] ?? "",
-            "email" => $admin["email"] ?? ""
-        ]
+        "admin" => admin_out($admin, false)
     ]);
 }
 
 if ($method === "GET" && ($action === "" || $action === "me")) {
     $auth = require_auth();
-    $admins = read_json($adminsFile);
-    foreach ($admins as $a) {
-        if ((int)$a["id"] === (int)$auth["id"]) {
-            respond([
-                "id" => $a["id"],
-                "username" => $a["username"],
-                "name" => $a["name"] ?? "",
-                "email" => $a["email"] ?? "",
-                "createdAt" => $a["createdAt"] ?? ""
-            ]);
-        }
-    }
-    fail("Không tìm thấy", 404);
+    $admin = db_one("SELECT * FROM admins WHERE id = ?", [(int)$auth["id"]]);
+    if (!$admin) fail("Không tìm thấy", 404);
+    respond(admin_out($admin));
 }
 
 if ($method === "POST" && $action === "change-password") {
@@ -61,32 +40,19 @@ if ($method === "POST" && $action === "change-password") {
     if ($oldPassword === "" || strlen($newPassword) < 6) {
         fail("Mật khẩu mới ít nhất 6 ký tự");
     }
-    $admins = read_json($adminsFile);
-    $idx = -1;
-    foreach ($admins as $i => $a) {
-        if ((int)$a["id"] === (int)$auth["id"]) { $idx = $i; break; }
-    }
-    if ($idx < 0) fail("Tài khoản không tồn tại", 404);
-    if (!password_verify($oldPassword, $admins[$idx]["passwordHash"] ?? "")) {
+    $admin = db_one("SELECT * FROM admins WHERE id = ?", [(int)$auth["id"]]);
+    if (!$admin) fail("Tài khoản không tồn tại", 404);
+    if (!password_verify($oldPassword, $admin["password_hash"])) {
         fail("Mật khẩu cũ sai");
     }
-    $admins[$idx]["passwordHash"] = password_hash($newPassword, PASSWORD_BCRYPT);
-    write_json($adminsFile, $admins);
+    db_exec("UPDATE admins SET password_hash = ? WHERE id = ?",
+        [password_hash($newPassword, PASSWORD_BCRYPT), (int)$admin["id"]]);
     respond(["success" => true]);
 }
 
 if ($method === "GET" && $action === "admins") {
     require_auth();
-    $list = array_map(function ($a) {
-        return [
-            "id" => $a["id"],
-            "username" => $a["username"],
-            "name" => $a["name"] ?? "",
-            "email" => $a["email"] ?? "",
-            "createdAt" => $a["createdAt"] ?? ""
-        ];
-    }, read_json($adminsFile));
-    respond($list);
+    respond(array_map("admin_out", db_all("SELECT * FROM admins ORDER BY id")));
 }
 
 if ($method === "POST" && $action === "admins") {
@@ -101,44 +67,29 @@ if ($method === "POST" && $action === "admins") {
     if ($email !== "" && !filter_var($email, FILTER_VALIDATE_EMAIL)) fail("Email không hợp lệ");
     if (strlen($password) < 6) fail("Mật khẩu ít nhất 6 ký tự");
 
-    $admins = read_json($adminsFile);
-    foreach ($admins as $a) {
-        if ($a["username"] === $username) fail("Username đã tồn tại");
-        if ($email && !empty($a["email"]) && strtolower($a["email"]) === strtolower($email)) {
-            fail("Email đã tồn tại");
-        }
-    }
-    $newAdmin = [
-        "id" => next_id($admins),
-        "username" => $username,
-        "name" => $name,
-        "email" => $email,
-        "passwordHash" => password_hash($password, PASSWORD_BCRYPT),
-        "createdAt" => date("c")
-    ];
-    $admins[] = $newAdmin;
-    write_json($adminsFile, $admins);
-    respond([
-        "id" => $newAdmin["id"],
-        "username" => $newAdmin["username"],
-        "name" => $newAdmin["name"],
-        "email" => $newAdmin["email"]
-    ]);
+    // Kiểm tra trước để báo lỗi rõ ràng; cột UNIQUE trong DB vẫn là lớp bảo vệ cuối cùng
+    if (db_value("SELECT COUNT(*) FROM admins WHERE username = ?", [$username])) fail("Username đã tồn tại");
+    if ($email !== "" && db_value("SELECT COUNT(*) FROM admins WHERE email = ?", [$email])) fail("Email đã tồn tại");
+
+    $id = db_insert(
+        "INSERT INTO admins (username, name, email, password_hash) VALUES (?, ?, ?, ?)",
+        [$username, $name, $email !== "" ? $email : null, password_hash($password, PASSWORD_BCRYPT)]
+    );
+    respond(admin_out(db_one("SELECT * FROM admins WHERE id = ?", [$id]), false));
 }
 
 if ($method === "DELETE" && $action === "admins") {
     $auth = require_auth();
     $id = isset($_GET["id"]) ? (int)$_GET["id"] : 0;
-    $admins = read_json($adminsFile);
-    if (count($admins) <= 1) fail("Phải giữ lại ít nhất 1 admin");
-    $idx = -1;
-    foreach ($admins as $i => $a) {
-        if ((int)$a["id"] === $id) { $idx = $i; break; }
-    }
-    if ($idx < 0) fail("Không tìm thấy", 404);
-    if ((int)$admins[$idx]["id"] === (int)$auth["id"]) fail("Không thể xóa chính mình");
-    array_splice($admins, $idx, 1);
-    write_json($adminsFile, $admins);
+    db_tx(function () use ($id, $auth) {
+        // FOR UPDATE khóa các dòng admin trong lúc kiểm tra, để 2 người xóa cùng lúc
+        // không thể làm hệ thống mất hết admin
+        $count = count(db_all("SELECT id FROM admins FOR UPDATE"));
+        if ($count <= 1) fail("Phải giữ lại ít nhất 1 admin");
+        if (!db_one("SELECT id FROM admins WHERE id = ?", [$id])) fail("Không tìm thấy", 404);
+        if ($id === (int)$auth["id"]) fail("Không thể xóa chính mình");
+        db_exec("DELETE FROM admins WHERE id = ?", [$id]);
+    });
     respond(["success" => true]);
 }
 

@@ -4,8 +4,8 @@ $uri = urldecode(parse_url($_SERVER["REQUEST_URI"], PHP_URL_PATH));
 $uri = rtrim($uri, "/") ?: "/";
 $file = __DIR__ . $uri;
 
-// Giống .htaccess trên hosting: chặn thư mục data, file ẩn và mã nguồn PHP ngoài /api
-if (preg_match('#^/data(/|$)#', $uri) || preg_match('#/\.#', $uri)
+// Giống .htaccess trên hosting: chặn thư mục data, database (file SQL), file ẩn và mã nguồn PHP ngoài /api
+if (preg_match('#^/(data|database)(/|$)#', $uri) || preg_match('#/\.#', $uri)
     || ($uri === "/router.php") || (substr($uri, -4) === ".php" && strpos($uri, "/api/") !== 0)) {
     http_response_code(403);
     header("Content-Type: text/plain; charset=utf-8");

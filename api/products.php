@@ -1,7 +1,6 @@
 <?php
 require_once __DIR__ . "/_helpers.php";
 
-$file = "cars.json";
 $method = method();
 $action = action();
 
@@ -47,72 +46,78 @@ function car_fields($data, $partial) {
     return $out;
 }
 
+// Cột trong bảng cars tương ứng với các khóa JSON frontend gửi lên
+const CAR_COLUMNS = [
+    "name" => "name", "brand" => "brand", "type" => "type", "seats" => "seats", "price" => "price",
+    "location" => "location", "rating" => "rating", "featured" => "featured", "image" => "image", "color" => "color"
+];
+
+function car_find($id) {
+    $row = db_one("SELECT * FROM cars WHERE id = ?", [$id]);
+    if (!$row) fail("Không tìm thấy xe", 404);
+    return $row;
+}
+
 if ($method === "GET") {
-    $cars = read_json($file);
-    $status = $_GET["status"] ?? "";
-    $location = $_GET["location"] ?? "";
-    $type = $_GET["type"] ?? "";
-    if ($status !== "") {
-        $cars = array_values(array_filter($cars, fn($c) => ($c["status"] ?? "") === $status));
+    // Lọc bằng WHERE trong SQL thay vì array_filter trong PHP:
+    // chỉ ghép những điều kiện được gửi lên, giá trị luôn đi qua dấu ?
+    $where = [];
+    $params = [];
+    foreach (["status", "location", "type"] as $key) {
+        $value = $_GET[$key] ?? "";
+        if ($value !== "") {
+            $where[] = "$key = ?";       // $key lấy từ danh sách cố định ở trên, không phải từ người dùng
+            $params[] = $value;
+        }
     }
-    if ($location !== "") {
-        $cars = array_values(array_filter($cars, fn($c) => ($c["location"] ?? "") === $location));
-    }
-    if ($type !== "") {
-        $cars = array_values(array_filter($cars, fn($c) => ($c["type"] ?? "") === $type));
-    }
-    respond($cars);
+    $sql = "SELECT * FROM cars" . ($where ? " WHERE " . implode(" AND ", $where) : "") . " ORDER BY id";
+    respond(array_map("car_out", db_all($sql, $params)));
 }
 
 if ($method === "POST") {
     require_auth();
-    $cars = read_json($file);
-    $newCar = array_merge(
+    $fields = array_merge(
         ["rating" => 4.8, "featured" => false, "image" => ""],
         car_fields(body_json(), false)
     );
-    $newCar["id"] = next_id($cars);
-    $newCar["status"] = "available";
-    $cars[] = $newCar;
-    write_json($file, $cars);
-    respond($newCar);
+    $fields["featured"] = $fields["featured"] ? 1 : 0;
+    $cols = array_keys($fields);
+    $id = db_insert(
+        "INSERT INTO cars (" . implode(", ", $cols) . ") VALUES (" . db_placeholders(count($cols)) . ")",
+        array_values($fields)
+    );   // status mặc định 'available', id do MySQL tự tăng
+    respond(car_out(car_find($id)));
 }
 
 if ($method === "PUT") {
     require_auth();
     $id = isset($_GET["id"]) ? (int)$_GET["id"] : 0;
-    $cars = read_json($file);
-    $idx = -1;
-    foreach ($cars as $i => $c) {
-        if ((int)$c["id"] === $id) { $idx = $i; break; }
+    car_find($id);
+    $fields = car_fields(body_json(), true);   // chỉ các trường được gửi lên
+    if (array_key_exists("featured", $fields)) $fields["featured"] = $fields["featured"] ? 1 : 0;
+    if ($fields) {
+        $sets = array_map(fn($c) => CAR_COLUMNS[$c] . " = ?", array_keys($fields));
+        db_exec("UPDATE cars SET " . implode(", ", $sets) . " WHERE id = ?",
+            array_merge(array_values($fields), [$id]));
     }
-    if ($idx < 0) fail("Không tìm thấy xe", 404);
-    $cars[$idx] = array_merge($cars[$idx], car_fields(body_json(), true));
-    $cars[$idx]["id"] = $id;
-    write_json($file, $cars);
-    respond($cars[$idx]);
+    respond(car_out(car_find($id)));
 }
 
 if ($method === "PATCH" && $action === "status") {
     require_auth();
     $id = isset($_GET["id"]) ? (int)$_GET["id"] : 0;
-    $cars = read_json($file);
-    $idx = -1;
-    foreach ($cars as $i => $c) {
-        if ((int)$c["id"] === $id) { $idx = $i; break; }
-    }
-    if ($idx < 0) fail("Không tìm thấy xe", 404);
+    car_find($id);
     $data = body_json();
-    $cars[$idx]["status"] = require_enum($data["status"] ?? "", CAR_STATUSES, "Trạng thái");
-    write_json($file, $cars);
-    respond($cars[$idx]);
+    $status = require_enum($data["status"] ?? "", CAR_STATUSES, "Trạng thái");
+    db_exec("UPDATE cars SET status = ? WHERE id = ?", [$status, $id]);
+    respond(car_out(car_find($id)));
 }
 
 if ($method === "DELETE") {
     require_auth();
     $id = isset($_GET["id"]) ? (int)$_GET["id"] : 0;
-    $cars = array_values(array_filter(read_json($file), fn($c) => (int)$c["id"] !== $id));
-    write_json($file, $cars);
+    // Khóa ngoại ON DELETE SET NULL: đơn đặt xe / lịch bảo dưỡng cũ của xe này vẫn còn, car_id thành NULL
+    db_exec("DELETE FROM cars WHERE id = ?", [$id]);
     respond(["success" => true]);
 }
 

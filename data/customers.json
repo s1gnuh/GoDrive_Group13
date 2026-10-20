@@ -1,62 +1,72 @@
 [
-  {
-    "id": 1,
-    "name": "Nguyễn Văn Khánh",
-    "email": "khanh@example.com",
-    "phone": "0901 111 001",
-    "joinedAt": "2026-06-12",
-    "totalBookings": 15,
-    "totalSpent": 12500000,
-    "tier": "gold"
-  },
-  {
-    "id": 2,
-    "name": "Nguyễn Minh Anh",
-    "email": "minhanh@example.com",
-    "phone": "0912 345 678",
-    "joinedAt": "2026-07-03",
-    "totalBookings": 8,
-    "totalSpent": 6800000,
-    "tier": "silver"
-  },
-  {
-    "id": 3,
-    "name": "Trần Hoàng Nam",
-    "email": "hoangnam@example.com",
-    "phone": "0987 654 321",
-    "joinedAt": "2026-05-19",
-    "totalBookings": 22,
-    "totalSpent": 18900000,
-    "tier": "gold"
-  },
-  {
-    "id": 4,
-    "name": "Lê Thu Hà",
-    "email": "thuha@example.com",
-    "phone": "0909 111 222",
-    "joinedAt": "2026-08-01",
-    "totalBookings": 3,
-    "totalSpent": 1950000,
-    "tier": "bronze"
-  },
-  {
-    "id": 5,
-    "name": "Phạm Quốc Bảo",
-    "email": "quocbao@example.com",
-    "phone": "0977 000 888",
-    "joinedAt": "2026-04-22",
-    "totalBookings": 31,
-    "totalSpent": 27500000,
-    "tier": "platinum"
-  },
-  {
-    "id": 6,
-    "name": "Đặng Thị Lan",
-    "email": "lan@example.com",
-    "phone": "0933 222 444",
-    "joinedAt": "2026-08-15",
-    "totalBookings": 2,
-    "totalSpent": 1200000,
-    "tier": "bronze"
-  }
+    {
+        "id": 1,
+        "name": "Nguyễn Văn Khánh",
+        "email": "khanh@example.com",
+        "phone": "0901 111 001",
+        "joinedAt": "2026-06-12",
+        "totalBookings": 15,
+        "totalSpent": 12500000,
+        "tier": "gold"
+    },
+    {
+        "id": 2,
+        "name": "Nguyễn Minh Anh",
+        "email": "minhanh@example.com",
+        "phone": "0912 345 678",
+        "joinedAt": "2026-07-03",
+        "totalBookings": 8,
+        "totalSpent": 6800000,
+        "tier": "silver"
+    },
+    {
+        "id": 3,
+        "name": "Trần Hoàng Nam",
+        "email": "hoangnam@example.com",
+        "phone": "0987 654 321",
+        "joinedAt": "2026-05-19",
+        "totalBookings": 22,
+        "totalSpent": 18900000,
+        "tier": "gold"
+    },
+    {
+        "id": 4,
+        "name": "Lê Thu Hà",
+        "email": "thuha@example.com",
+        "phone": "0909 111 222",
+        "joinedAt": "2026-08-01",
+        "totalBookings": 3,
+        "totalSpent": 1950000,
+        "tier": "bronze"
+    },
+    {
+        "id": 5,
+        "name": "Phạm Quốc Bảo",
+        "email": "quocbao@example.com",
+        "phone": "0977 000 888",
+        "joinedAt": "2026-04-22",
+        "totalBookings": 31,
+        "totalSpent": 27500000,
+        "tier": "platinum"
+    },
+    {
+        "id": 6,
+        "name": "Đặng Thị Lan",
+        "email": "lan@example.com",
+        "phone": "0933 222 444",
+        "joinedAt": "2026-08-15",
+        "totalBookings": 2,
+        "totalSpent": 1200000,
+        "tier": "bronze"
+    },
+    {
+        "id": 7,
+        "name": "Nhật Quang",
+        "email": "pressbrazing@gmail.com",
+        "phone": "0945632118",
+        "joinedAt": "2026-10-17",
+        "totalBookings": 2,
+        "totalSpent": 0,
+        "tier": "bronze"
+    }
 ]

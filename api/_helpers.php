@@ -11,6 +11,7 @@ if ($_SERVER["REQUEST_METHOD"] === "OPTIONS") {
 
 date_default_timezone_set("Asia/Ho_Chi_Minh");
 
+// Thư mục data/ giờ chỉ còn giữ khóa ký token (.jwt_secret); dữ liệu đã chuyển sang MySQL
 define("DATA_DIR", dirname(__DIR__) . DIRECTORY_SEPARATOR . "data");
 
 // Secret ký token: ưu tiên biến môi trường GODRIVE_JWT_SECRET, nếu không có thì
@@ -31,52 +32,6 @@ function load_jwt_secret() {
 }
 define("JWT_SECRET", load_jwt_secret());
 
-function ensure_data_dir() {
-    if (!is_dir(DATA_DIR)) {
-        mkdir(DATA_DIR, 0777, true);
-    }
-}
-
-function json_path($file) {
-    return DATA_DIR . DIRECTORY_SEPARATOR . $file;
-}
-
-function read_json($file) {
-    ensure_data_dir();
-    $path = json_path($file);
-    if (!file_exists($path)) {
-        return [];
-    }
-    $fh = fopen($path, "rb");
-    if (!$fh) return [];
-    flock($fh, LOCK_SH);
-    $raw = stream_get_contents($fh);
-    flock($fh, LOCK_UN);
-    fclose($fh);
-    $data = json_decode($raw, true);
-    return is_array($data) ? $data : [];
-}
-
-function write_json($file, $data) {
-    ensure_data_dir();
-    $ok = file_put_contents(
-        json_path($file),
-        json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
-        LOCK_EX
-    );
-    if ($ok === false) fail("Không ghi được dữ liệu", 500);
-}
-
-// Request ghi dữ liệu (POST/PUT/PATCH/DELETE) chạy tuần tự: giữ khóa độc quyền
-// đến khi script kết thúc để hai request đọc-sửa-ghi không đè lên nhau.
-function acquire_write_lock() {
-    static $handle = null;
-    if ($handle) return;
-    ensure_data_dir();
-    $handle = fopen(json_path(".write.lock"), "c");
-    if ($handle) flock($handle, LOCK_EX);
-}
-
 function body_json() {
     $raw = file_get_contents("php://input");
     $data = json_decode($raw, true);
@@ -91,15 +46,6 @@ function respond($data, $code = 200) {
 
 function fail($message, $code = 400) {
     respond(["error" => $message], $code);
-}
-
-function next_id($arr) {
-    $max = 0;
-    foreach ($arr as $item) {
-        $id = isset($item["id"]) ? (int)$item["id"] : 0;
-        if ($id > $max) $max = $id;
-    }
-    return $max + 1;
 }
 
 function base64url_encode($data) {
@@ -166,10 +112,6 @@ function method() {
     return strtoupper($_SERVER["REQUEST_METHOD"] ?? "GET");
 }
 
-if (!in_array(method(), ["GET", "HEAD", "OPTIONS"], true)) {
-    acquire_write_lock();
-}
-
 function action() {
     return isset($_GET["action"]) ? $_GET["action"] : "";
 }
@@ -188,63 +130,6 @@ function txn_code() {
     return "TXN-" . date("Ymd") . "-" . strtoupper(bin2hex(random_bytes(2)));
 }
 
-// Đồng bộ giao dịch với đơn đặt xe, trả về [danh sách mới, có thay đổi hay không]:
-// - tên khách, tên xe luôn lấy theo đơn; số tiền lấy theo tổng tiền đơn trừ khi admin đã tự sửa
-// - đơn đã hủy thì bỏ giao dịch chưa thu
-// - đơn đã duyệt nhưng chưa có giao dịch (duyệt trước khi có tính năng thanh toán) thì tạo
-//   giao dịch "chờ thanh toán" với hình thức để trống, chờ admin chọn
-function sync_payments($payments, $bookings) {
-    $byId = [];
-    foreach ($bookings as $b) $byId[(string)$b["id"]] = $b;
-    $changed = false;
-    $out = [];
-    $hasPayment = [];
-    foreach ($payments as $p) {
-        $key = (string)($p["bookingId"] ?? "");
-        $b = $byId[$key] ?? null;
-        if ($b) {
-            if (($b["status"] ?? "") === "cancelled" && ($p["status"] ?? "") === "pending") { $changed = true; continue; }
-            foreach (["customerName", "carName"] as $k) {
-                $v = (string)($b[$k] ?? "");
-                if (($p[$k] ?? null) !== $v) { $p[$k] = $v; $changed = true; }
-            }
-            $total = (int)($b["total"] ?? 0);
-            if (empty($p["amountEdited"]) && (int)($p["amount"] ?? 0) !== $total) { $p["amount"] = $total; $changed = true; }
-            $hasPayment[$key] = true;
-        }
-        $out[] = $p;
-    }
-    foreach ($bookings as $b) {
-        $key = (string)$b["id"];
-        if (($b["status"] ?? "") !== "confirmed" || isset($hasPayment[$key])) continue;
-        $approved = !empty($b["approvedAt"]) ? strtotime($b["approvedAt"]) : false;
-        $out[] = [
-            "id" => next_id($out),
-            "txnCode" => txn_code(),
-            "bookingId" => $b["id"],
-            "customerName" => (string)($b["customerName"] ?? ""),
-            "carName" => (string)($b["carName"] ?? ""),
-            "amount" => (int)($b["total"] ?? 0),
-            "method" => "",
-            "status" => "pending",
-            "createdAt" => date("Y-m-d H:i", $approved ?: time()),
-            "paidAt" => "",
-            "note" => "",
-            "approvedBy" => ""
-        ];
-        $changed = true;
-    }
-    return [$out, $changed];
-}
-
-// Đọc giao dịch đã đồng bộ với đơn đặt xe, ghi lại nếu có thay đổi
-function load_synced_payments() {
-    acquire_write_lock();
-    [$list, $changed] = sync_payments(read_json("payments.json"), read_json("bookings.json"));
-    if ($changed) write_json("payments.json", $list);
-    return $list;
-}
-
 // Thời điểm thanh toán admin nhập: "Y-m-d H:i" hoặc "Y-m-d\TH:i" (ô datetime-local)
 function clean_datetime($value) {
     $value = str_replace("T", " ", trim((string)$value));
@@ -252,20 +137,6 @@ function clean_datetime($value) {
     $d = DateTime::createFromFormat("Y-m-d H:i", substr($value, 0, 16));
     if (!$d) fail("Thời điểm thanh toán không hợp lệ");
     return $d->format("Y-m-d H:i");
-}
-
-// Số liệu thanh toán chỉ tính từ lúc đơn được duyệt: bỏ các giao dịch không gắn với đơn,
-// hoặc gắn với đơn chưa duyệt (dữ liệu cũ). Đơn đã hủy chỉ giữ giao dịch đã hoàn tiền.
-function payments_visible($payments, $bookings) {
-    $status = [];
-    foreach ($bookings as $b) $status[(string)$b["id"]] = $b["status"] ?? "";
-    $list = array_values(array_filter($payments, function ($p) use ($status) {
-        $bs = $status[(string)($p["bookingId"] ?? "")] ?? null;
-        if ($bs === "confirmed") return true;
-        return $bs === "cancelled" && ($p["status"] ?? "") === "refunded";
-    }));
-    usort($list, fn($a, $b) => strcmp($b["createdAt"] ?? $b["paidAt"] ?? "", $a["createdAt"] ?? $a["paidAt"] ?? ""));
-    return $list;
 }
 
 function clean_str($value, $max = 200) {
@@ -331,28 +202,6 @@ function phone_norm($phone) {
     return preg_replace('/\D+/', "", (string)$phone);
 }
 
-// Tìm khách theo email hoặc số điện thoại (so sánh không phân biệt hoa thường / khoảng trắng)
-function find_customer_index($customers, $email, $phone) {
-    $email = strtolower(trim((string)$email));
-    $phone = phone_norm($phone);
-    foreach ($customers as $i => $c) {
-        if ($email !== "" && strtolower($c["email"] ?? "") === $email) return $i;
-    }
-    foreach ($customers as $i => $c) {
-        if ($phone !== "" && phone_norm($c["phone"] ?? "") === $phone) return $i;
-    }
-    return -1;
-}
-
-// Thêm hạng tính tự động và thứ hạng (#1 = chi tiêu nhiều nhất) cho danh sách khách hàng
-function customers_with_rank($customers) {
-    foreach ($customers as &$c) {
-        $c["totalSpent"] = max(0, (int)($c["totalSpent"] ?? 0));
-        $c["tier"] = customer_tier($c["totalSpent"]);
-    }
-    unset($c);
-    usort($customers, fn($a, $b) => $b["totalSpent"] <=> $a["totalSpent"] ?: strcmp($a["joinedAt"] ?? "", $b["joinedAt"] ?? ""));
-    foreach ($customers as $i => &$c) $c["rank"] = $i + 1;
-    unset($c);
-    return $customers;
-}
+// ===== Kết nối database và lớp chuyển đổi dữ liệu =====
+require_once __DIR__ . "/_db.php";
+require_once __DIR__ . "/_models.php";
