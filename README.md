@@ -201,7 +201,6 @@ Thresholds live in `api/_helpers.php` (`CUSTOMER_TIERS`) and are mirrored in `js
 ### Run locally
 
 ```bash
-git clone https://github.com/s1gnuh/Car-Rental-App-GoDrive.git
 cd Car-Rental-App-GoDrive
 php -S localhost:8080 router.php
 ```
@@ -434,6 +433,6 @@ The full text is available on the site at [`/disclaimer.html`](https://godrive.r
 
 <div align="center">
 
-Made with ☕ as a learning project · [Report an issue](https://github.com/s1gnuh/Car-Rental-App-GoDrive/issues)
+Made with ☕ as a learning project · Group 13 Mô hình hóa
 
 </div>

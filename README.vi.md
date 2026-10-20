@@ -179,7 +179,7 @@ Các mốc nằm ở `api/_helpers.php` (`CUSTOMER_TIERS`) và được khai bá
 | Giao diện | HTML5, CSS3 (biến CSS, bộ màu sáng/tối), JavaScript thuần (ES2020) |
 | Biểu đồ | [Chart.js 4](https://www.chartjs.org/) (chỉ trang quản trị, qua CDN) |
 | Máy chủ | PHP 8 (không framework), API dạng REST trả JSON |
-| Lưu trữ | File JSON trong `data/`, có khóa file khi ghi |
+| Lưu trữ | MySQL / MariaDB qua PDO (bản gốc dùng file JSON trong `data/`) |
 | Xác thực | Token ký HMAC, mật khẩu băm bcrypt |
 | Hosting | Bất kỳ hosting Apache + PHP (`.htaccess`), hoặc `php -S` trên máy |
 
@@ -189,7 +189,8 @@ Các mốc nằm ở `api/_helpers.php` (`CUSTOMER_TIERS`) và được khai bá
 
 ### Yêu cầu
 
-- **PHP 8.0 trở lên** (không cần cài thêm extension, không cần `mbstring`)
+- **PHP 8.0 trở lên**, có bật `pdo_mysql` (XAMPP bật sẵn)
+- **MySQL hoặc MariaDB** (ví dụ XAMPP)
 - Trình duyệt hiện đại
 
 | Hệ điều hành | Cài PHP |
@@ -198,13 +199,21 @@ Các mốc nằm ở `api/_helpers.php` (`CUSTOMER_TIERS`) và được khai bá
 | macOS | `brew install php` |
 | Ubuntu / Debian | `sudo apt install php-cli` |
 
-### Chạy trên máy
+### Chạy trên máy (Windows + XAMPP)
 
-```bash
-git clone https://github.com/s1gnuh/Car-Rental-App-GoDrive.git
-cd Car-Rental-App-GoDrive
-php -S localhost:8080 router.php
-```
+1. Mở **XAMPP Control Panel**, bấm **Start** ở dòng **MySQL**.
+2. Tạo database và các bảng: mở http://localhost/phpmyadmin (cần Start cả Apache), chọn **Import**, chọn `database/schema.sql`, bấm **Import**.
+   Hoặc dùng dòng lệnh: `D:\xampp\mysql\bin\mysql.exe -u root -e "source database/schema.sql"`
+3. Chuyển dữ liệu mẫu từ `data/*.json` vào MySQL:
+   ```powershell
+   D:\xampp\php\php.exe database\migrate_json.php
+   ```
+4. Chạy web bằng PHP của XAMPP (đã bật sẵn `pdo_mysql`):
+   ```powershell
+   D:\xampp\php\php.exe -S localhost:8080 router.php
+   ```
+
+Thông tin kết nối (host, user, mật khẩu, tên database) nằm trong `api/_config.php`. Mặc định khớp với XAMPP: user `root`, không mật khẩu, database `godrive`.
 
 | Trang | Địa chỉ |
 |---|---|
@@ -319,10 +328,27 @@ Script gắn số phiên bản mới vào `version.json` và các link `?v=` tro
 └── router.php            # Router cho php -S (chỉ dùng trên máy)
 ```
 
-### Các file dữ liệu
+### Database (MySQL)
 
-| File | Nội dung |
+| Bảng | Nội dung |
 |---|---|
+| `cars` | Danh sách xe (`image`, `color` có thể để trống) |
+| `bookings` | Đơn đặt xe, khóa ngoại `car_id → cars.id` |
+| `payments` | Giao dịch, khóa ngoại `booking_id → bookings.id`; tên khách/tên xe lấy bằng JOIN |
+| `customers` | Khách hàng và tổng tiền thuê; hạng tính khi truy vấn, không lưu |
+| `maintenance` | Lịch bảo trì, khóa ngoại `car_id → cars.id` |
+| `admins` | Tài khoản admin (mật khẩu băm bcrypt) |
+
+| File | Vai trò |
+|---|---|
+| `database/schema.sql` | Tạo database `godrive` và 6 bảng |
+| `database/migrate_json.php` | Chuyển dữ liệu từ `data/*.json` vào MySQL |
+| `api/_config.php` | Thông tin kết nối MySQL |
+| `api/_db.php` | Kết nối PDO, hàm truy vấn, transaction |
+| `api/_models.php` | Đổi dòng trong bảng thành JSON cho frontend |
+| `data/.jwt_secret` | Khóa ký token, tự tạo khi chạy lần đầu, không đưa lên Git |
+
+---|---|
 | `data/cars.json` | Danh sách xe (có thể có `image`, `color`) |
 | `data/bookings.json` | Đơn đặt xe (kèm `paymentMethod`, `approvedAt`) |
 | `data/payments.json` | Giao dịch (`method`, `status`, `amount`, `paidAt`, `approvedBy`…) |
@@ -434,6 +460,6 @@ Toàn văn có trên website tại [`/disclaimer.html`](https://godrive.rf.gd/di
 
 <div align="center">
 
-Thực hiện với ☕ trong quá trình học tập · [Báo lỗi / góp ý](https://github.com/s1gnuh/Car-Rental-App-GoDrive/issues)
+Thực hiện với ☕ trong quá trình học tập · Group 13 Mô hình hóa
 
 </div>
